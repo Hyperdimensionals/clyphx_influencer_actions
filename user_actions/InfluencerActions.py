@@ -16,18 +16,25 @@ class InfluencerActions(UserActionsBase):
         self.tempo_diff = -.1  # Stores amount song tempo differs from scene tempo setting
         self.bpm_adj_max = .25  # decimal, max adjustment limit
         self.bpm_adj_active = True  # Stores whether tempo adjustment is allowed
+        self.last_triggered = None
+        self.last_used_scene = None # Tracks last scene to be tempo adjusted
+    
         self.last_scene_id = None
         self.last_scene_tempo = -1
+        self.song_last_playing_state = False
+        self.song_started_playing = False
         self.last_song_tempo = 120
         self.last_triggered_scene = None
-        self.next_scene = None
+        self.prev_scene = None
+        self.scene_last = None
     
         self.add_global_action("adjbpm", self.adjust_bpm)
 
-        with open('/Users/blaise/Documents/Programming/Ableton Extensions/ClyphX Influencer Actions/useractiondebug.txt', 'w') as f:
-            f.writelines(str(self.song().scenes))
+        #with open('/Users/blaise/Documents/Programming/Ableton Extensions/ClyphX Influencer Actions/useractiondebug.txt', 'w') as f:
+        #    f.writelines(str(self.song().scenes))
         song = self.song()
         song.add_tempo_listener(self.on_tempo_changed)
+        song.add_is_playing_listener(self.on_is_playing_changed)
         # song.add_scenes_listener(self.on_scene_changed)
 
     def adjust_bpm(self, action_def, args):
@@ -45,17 +52,30 @@ class InfluencerActions(UserActionsBase):
         if not self.bpm_adj_active:
             return False
         song = self.song()
-        if self.last_triggered_scene.is_triggered:
+        if self.song_started_playing == True:
+            song_started = True
+        else: 
+            song_started = False
+        self.song_started_playing = False 
+        # Updated for calls of this func while song is playing
+        # Will update back to True once song.is_playing state changes
+    
+        # Find Scene to use to compare
+        if self.last_triggered.scene.is_triggered:
+            # is_triggered is always false if xclip activated when song is not playing
             # Since follow actions trigger next scene immediately, 
             # before playing clips, must find way to apply triggered scene to next time only
             # when scene is triggered at xclip play
-            scene = self.next_scene if self.next_scene else song.view.selected_scene
-            self.next_scene = self.last_triggered_scene
+            if song_started:
+                scene = song.view.selected_scene
+            else:
+                scene = self.prev_scene if self.prev_scene else song.view.selected_scene
+            self.prev_scene = self.last_triggered.scene
         else:
-            scene = self.last_triggered_scene  # was song.view.selected_scene
+            scene = self.last_triggered.scene if self.last_triggered.scene else song.view.selected_scene
 
+        self.last_used_scene = Snapshot(scene, song.tempo)
         xclip = action_def["xtrigger"]
-
         scene_clips = [
             c.clip._live_ptr for c in scene.clip_slots if c.clip is not None]
 
@@ -79,7 +99,7 @@ class InfluencerActions(UserActionsBase):
         #    if self.any_scene_clips_playing(scene.clip_slots):
             song.tempo = self.get_adjusted_bpm(
                 scene.tempo, self.tempo_diff, self.bpm_adj_max)
-        self.canonical_parent.show_message("scene tempo: {}, last scene tempo: {}, lasttempo: {}".format(scene.tempo, self.last_scene_tempo, self.last_song_tempo))
+        # self.canonical_parent.show_message("scene tempo: {}, last scene tempo: {}, lasttempo: {}".format(scene.tempo, self.last_scene_tempo, self.last_song_tempo))
 
     def get_adjusted_bpm(self, pre_tempo, adj, adj_max):
         """
@@ -112,6 +132,7 @@ class InfluencerActions(UserActionsBase):
         tempo_diff = ((current_tempo - last_scene_tempo) / last_scene_tempo)
         return tempo_diff
 
+
     # Listeners #
     #############
 
@@ -123,7 +144,9 @@ class InfluencerActions(UserActionsBase):
     @subject_slot_group('is_triggered')
     def is_triggered_listener(self, scene):
         self.last_triggered_scene = scene
-        #self.canonical_parent.show_message('Scene {} is triggered'.format(scene.name)) 
+        self.last_triggered = Snapshot(scene, self.song().tempo)
+        self.canonical_parent.show_message(
+            'Scene {} is triggered, curradj: {}, lastsongbpm: {}'.format(self.last_triggered.scene.name, self.tempo_diff, self.last_song_tempo)) 
 
     def on_tempo_changed(self):
         """
@@ -133,21 +156,35 @@ class InfluencerActions(UserActionsBase):
         preventing proper adjustment.
         """
         song = self.song()
-        scene = self.last_triggered_scene
-        if scene.is_triggered: #delete if found unecessary
+        if not self.last_used_scene:
+            self.last_song_tempo = song.tempo
+        scene = self.last_triggered.scene
+        if (scene.tempo == song.tempo):
+            pass
+        elif scene.is_triggered: #delete if found unecessary
             self.last_song_tempo = song.tempo
         #    self.tempo_at_scene_trigger = song.tempo
-        elif (scene.tempo == song.tempo):
-            pass
         else:
             self.last_song_tempo = song.tempo
 
         #if scene.tempo == self.last_scene_tempo:
-            #self.canonical_parent.show_message("{}, {}: Scenes tempos same".format(scene.tempo, self.last_scene_tempo))
-    
+        #    self.canonical_parent.show_message("{}, {}: Scenes tempos same".format(scene.tempo, self.last_scene_tempo))
+
+    def on_is_playing_changed(self):
+        # If play button in ableton GUI is used to restart playing WHILE song
+        # is already playing, song_start_playing will be set to true
+        # probably because is_playing is briefly False any time play 
+        # button is activated regardless of current play state
+        song_playing = self.song().is_playing
+        if (self.song_last_playing_state == False) and song_playing:
+            self.song_started_playing = True
+        else:
+            self.song_started_playing = False
+
+        self.song_last_playing_state = song_playing
+        #self.song_last_playing_state = 
     def on_scene_changed(self):
             self.canonical_parent.show_message("Scene Changed")
-    
 
     def get_obj_attr_list(self, obj):
         return [(str(attribute) + '\n') for attribute in dir(obj)]
@@ -155,10 +192,9 @@ class InfluencerActions(UserActionsBase):
         with open('/Users/blaise/Documents/Programming/Ableton Extensions/ClyphX Influencer Actions/useractiondebug.txt', 'a') as f:
             f.write(text)
 
-class SceneSettings():
+class Snapshot():
     """"""
-    def __init__(self, scene=None, scene_tempo=None, song_tempo=None):
+    def __init__(self, scene=None, song_tempo=None):
         self.scene = scene
-        self.tempo = scene_tempo
+        self.scene_id = scene._live_ptr
         self.song_tempo = song_tempo
-        
