@@ -66,13 +66,6 @@ class InfluencerActions(UserActionsBase):
                 self.canonical_parent.show_message("No Tempo Difference")
 
                 return False
-            #self.canonical_parent.show_message("%s: adjbpm test" % scene._live_ptr)
-            
-            #if (self.last_triggered.scene._live_ptr == scene._live_ptr):
-            #    self.canonical_parent.show_message("Last Scene Triggered is this scene")
-            #if (self.prev_scene._live_ptr == scene._live_ptr):
-            #    self.canonical_parent.show_message("Prev scene triggered is this scene: {}, last: {}".format(self.prev_scene.name, self.last_triggered.scene.name))
-            
             #self.canonical_parent.show_message("Test")
             if self.current_scene:
                 self.tempo_diff = self.get_tempo_diff(
@@ -84,7 +77,7 @@ class InfluencerActions(UserActionsBase):
                 scene.tempo, self.tempo_diff, self.bpm_adj_max)
 
             if (self.current_scene and scene):
-                self.write_to_file(
+                self.debugmsg(
                     "The last used scene was '{0}', With a set tempo of {1}, and the "
                     "last recorded tempo of {2} Deviated by this scene’s tempo"
                     " by {3}. \nThe new adjusted scene is '{4}', with a set "
@@ -266,7 +259,7 @@ class InfluencerActions(UserActionsBase):
     #############
     def get_obj_attr_list(self, obj):
         return [(str(attribute) + '\n') for attribute in dir(obj)]
-    def write_to_file(self, text):
+    def debugmsg(self, text):
         with open('/Users/blaise/Documents/Programming/Ableton Extensions/clyphx_influencer_actions/useractiondebug.txt', 'a') as f:
             f.write(text)
 
