@@ -48,25 +48,23 @@ class InfluencerActions(UserActionsBase):
             if max_val:
                 self.bpm_adj_max = max_val
                 self.canonical_parent.show_message(str(max_val))
-        if "rename" in args:
-            action_def["xtrigger"].__dict__['name'] = 'nametestattr'
-            #self.debugmsg(str(dir(action_def["xtrigger"])))
-            #self.append_xclip_name([action_def["xtrigger"]])
-            self.canonical_parent.show_message(str(action_def["xtrigger"].name))
+        if "addall" in args: # Add action str to xclip in all tempo'd scenes.
+            self.add_action_to_tempo_scenes(self.action_name)
+
         if "on" in args:
             self.bpm_adj_active = True
             if self.last_song_tempo is None:
                 # Adj will be based on current tempo if no last tempo assigned.
-                # last tempo set to none when this action is turned off.
+                # last tempo is set to None when this action is turned off.
                 # Checking for None means ON command won't change last tempo
                 # if action is already on.
                 self.last_song_tempo = song.tempo
-
         elif "off" in args:  # Deactivates BPM adjustment, 
                              # Scene tempos will apply normally.
             self.bpm_adj_active = False
             self.last_song_tempo = None
             return False
+
         if not self.bpm_adj_active:
             return False
 
@@ -74,9 +72,12 @@ class InfluencerActions(UserActionsBase):
 
         xclip = action_def["xtrigger"]
 
-        clip_playing = 0
+        scene = self.get_scene_by_clip(xclip)
 
-        scene = self.find_active_scene(xclip)
+        if not self.is_active_scene(scene):
+            self.canonical_parent.show_message("NOT ACTIVE SCENE")
+            return False
+
         pre_adj_tempo = self.last_song_tempo
         if (scene) and (scene.tempo > 0):
             if ((self.tempo_diff == 0) and (
@@ -141,15 +142,25 @@ class InfluencerActions(UserActionsBase):
         tempo_diff = ((current_tempo - last_scene_tempo) / last_scene_tempo)
         return tempo_diff
 
+    def is_active_scene(self, scene):
+        """
+        Checks if given scene is currently playing scene.
+        Considers behavior when follow actions enabled.
+        :param scene: Scene Object, scene to check
+        """
+        if scene._live_ptr == self.get_active_scene()._live_ptr:
+            return True
+        else:
+            self.canonical_parent.show_message("NOT ACTIVE SCENE")
+            return False
     def get_active_scene(self):
         """
         Return currently playing scene at time of xclip trigger
-        DEPRECATED
         Checks if follow actions are enabled
         :return: Scene Object
         """
         song = self.song()
-        song_started = self.check_song_just_started()
+        song_started = self.song_just_started()
         if self.follow_actions_enabled():
             # is_triggered is always false if xclip activated when song is not playing
             # Since follow actions trigger next scene immediately, 
@@ -163,7 +174,7 @@ class InfluencerActions(UserActionsBase):
             scene = self.last_triggered.scene if self.last_triggered.scene else song.view.selected_scene
         return scene
 
-    def find_active_scene(self, clip):
+    def get_scene_by_clip(self, clip):
         """
         Search for scene in song which holds given clip
         :param clip: Clip object
@@ -180,7 +191,7 @@ class InfluencerActions(UserActionsBase):
         scene_ptrs = [s._live_ptr for s in self.song().scenes]
         return scene_ptrs.index(scene_ptr)
     
-    def check_song_just_started(self):
+    def song_just_started(self):
         """
         Checks if song just started playing based on listener assigned var.
         Resets song_started_playing var to false after checked
@@ -199,20 +210,18 @@ class InfluencerActions(UserActionsBase):
         directly above the last triggered scene
         """
         current_scene_above = False
-        scene_above_ptr = self.get_scene_index(self.last_triggered.scene._live_ptr) - 1
+        scene_above_index = self.get_scene_index(self.last_triggered.scene._live_ptr) - 1
         if self.current_scene:
             if (self.song().scenes[
-                scene_above_ptr]._live_ptr == self.current_scene._live_ptr
+                scene_above_index]._live_ptr == self.current_scene._live_ptr
                 ):
-                current_scene_above = True
-                #self.canonical_parent.show_message("Scene Above: {}, Cur Scene: {}".format(self.song().scenes[scene_above_ptr]._live_ptr, self.current_scene._live_ptr))
-        
+                current_scene_above = True        
         if (self.last_triggered.scene.is_triggered):
             return True
         else:
             return False
         
-    def append_xclip_name(self, scene_clips):
+    def append_xclip_name(self, action_name, scene_clips):
         """
         Add action to the first xclip found on triggered scene.
         :param scene_clips: List, clips from scene
@@ -221,11 +230,11 @@ class InfluencerActions(UserActionsBase):
         action_end_match = ";\s*$"
 
         action_end_append = "; "
-        action_append = " " + self.action_name + ";"
+        action_append = " " + action_name + ";"
         for c in scene_clips:
             name_lower = c.name.lower()
             if (re.search(xclip_match, name_lower) and
-                (not re.search(self.action_name, name_lower))):
+                (not re.search(action_name, name_lower))):
                 name_l = []
                 name_l.append(c.name)
                 if not re.search(action_end_match, name_lower):
@@ -233,29 +242,62 @@ class InfluencerActions(UserActionsBase):
                 name_l.append(action_append)
                 new_name = ''.join(name_l)
                 #self.canonical_parent.show_message(str(new_name))
-                #c.name = new_name
-                a_list = 'clip namea "renames" ;'
+                c.name = new_name
+                # a_list = 'clip namea "renames" ;'
                 #self.canonical_parent.show_message(a_list)
                 #self.canonical_parent.clyphx_pro_component.trigger_action_list(a_list)
                 return c
 
-    def get_max_adj_from_list(self, li):
-            max_val_index = li.index('max')
-            max_val = False
-            try:
-                max_val = float(li[max_val_index + 1])
-                # Set Max Adjustment should be next item in list.
-            except IndexError:
-                self.canonical_parent.show_message(
-                    "ADJBPM: MAX must be followed by decimal representing "
-                    "percentage max adjustment")
-                return False
-            except ValueError:
-                self.canonical_parent.show_message("ADJBPM: 1MAX must be followed by decimal representing "
-                    "percentage max adjustment")
-                return False
-            return max_val
+    def add_action_to_all_scenes(self, action_name):
+        """
+        Add action to every scene where xclip is present.
+        Action will not be added if it is already present in the found xclip.
+        :param action_name: str, name of action to add to xclip
+        :return: None
+        """
+        for scene in self.song().scenes:
+            self.append_xclip_name(action_name,
+                [c.clip for c in scene.clip_slots if c.clip is not None]
+            )
 
+    # Action Argument Funcs #
+    #########################
+    # Methods related to interpreting action args and executing their commands
+
+    def get_max_adj_from_list(self, li):
+        """
+        Interpret max adjustment setting from argument list.
+        Set max will be next item in list after 'max' string.
+        :param li: list, from split()-ing apart xclip args string.
+        :return max_val: float, new max BPM adjustment as decimal fraction.
+        """
+        max_val_index = li.index('max')
+        max_val = False
+        input_error_msg = "ADJBPM: MAX must be followed by decimal " \
+                          "representing percentage max adjustment"
+        try:
+            max_val = float(li[max_val_index + 1])
+            # Set Max Adjustment should be next item in list.
+        except IndexError:
+            self.canonical_parent.show_message(input_error_msg)
+            return False
+        except ValueError:
+            self.canonical_parent.show_message(input_error_msg)
+            return False
+        return max_val
+
+    def add_action_to_tempo_scenes(self, action_name):
+        """
+        Add action to every scene where xclip is present and scene has tempo.
+        Action will not be added if it is already present in the found xclip.
+        :param action_name: str, name of action to add to xclip
+        :return: None
+        """
+        for scene in self.song().scenes:
+            if scene.tempo > 0:
+                self.append_xclip_name(action_name,
+                    [c.clip for c in scene.clip_slots if c.clip is not None]
+                )
 
     # Listeners #
     #############
@@ -273,15 +315,12 @@ class InfluencerActions(UserActionsBase):
         when you 'play' a scene, scene triggers once when it's triggered but
         not yet playing,
         When scenes are triggered by follow actions and not user input,
-        triggering happens right before a scene plays and the 
-        scene after the now playing scene is triggered.
+        triggering of the next scene begins right before the current scene plays.
+        So this listener will always see the NEXT scene to play.
         """
         self.prev_scene = self.last_triggered.scene if self.last_triggered else None
         self.last_triggered_scene = scene
         self.last_triggered = Snapshot(scene, self.song().tempo)
-        self.append_xclip_name(
-            [c.clip for c in scene.clip_slots if c.clip is not None]
-        )
         #self.canonical_parent.show_message(
         #    'Scene {} is triggered, curradj: {}, lastsongbpm: {}'.format(self.last_triggered.scene.name, self.tempo_diff, self.last_song_tempo)) 
 
@@ -331,11 +370,6 @@ class InfluencerActions(UserActionsBase):
             clip = self.append_xclip_name(
                 [c.clip for c in scene.clip_slots if c.clip is not None]
             )
-            self.adjust_bpm(
-                {'function': self.adjust_bpm, 'trk_based': False, 'xtrigger': clip,
-                 'xtrigger_is_xclip': True, 'xtrigger_is_nameable': True,
-                 'ident': 'test 75'}, "rename")
-
             
     # Debugging #
     #############
@@ -346,7 +380,9 @@ class InfluencerActions(UserActionsBase):
             f.write(text)
 
 class Snapshot():
-    """"""
+    """
+    Record states of given variables at time of instance creation
+    """
     def __init__(self, scene=None, song_tempo=None):
         self.scene = scene
         self.scene_id = scene._live_ptr
