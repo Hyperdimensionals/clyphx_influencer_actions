@@ -207,7 +207,7 @@ class InfluencerActions(UserActionsBase):
     
     def song_just_started(self):
         """
-        Checks if song  started playing since last check,
+        Checks if song started playing since last check,
         self.song_started_playing updated via listener.
         :return song_started: bool
         """
@@ -223,7 +223,7 @@ class InfluencerActions(UserActionsBase):
         This is a crude indirect check, checking if the stored last triggered
         scene is currently triggered, and if the last adjusted scene is
         directly above the last triggered scene.
-        :return: bool, best guess of whether follow actions are enabled in ableton.
+        :return: bool, best guess of whether follow actions are enabled.
         """
         scene_last_adjusted_above = False
         scene_above_index = self.get_scene_index(self.last_triggered.scene._live_ptr) - 1
@@ -244,6 +244,7 @@ class InfluencerActions(UserActionsBase):
         in lists with multiple xclips.
         :param action_name: str, name of action to append to xclip name.
         :param clips_list: list, clips from scene.
+        :return: scene obj, scene with appended xclip as name.
         """
         xclip_match = "^\[.*\]"
         action_end_match = ";\s*$"
@@ -287,7 +288,7 @@ class InfluencerActions(UserActionsBase):
         Interpret max adjustment setting from argument list.
         Set max will be next item in list after 'max' string.
         :param li: list, from split()-ing apart xclip args string.
-        :return max_val: float, new max BPM adjustment as decimal fraction.
+        :return: float, new max BPM adjustment as decimal fraction.
         """
         max_val_index = li.index('max')
         max_val = None
