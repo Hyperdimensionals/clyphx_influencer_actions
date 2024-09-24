@@ -18,9 +18,10 @@ class InfluencerActions(UserActionsBase):
         self.tempo_diff = -.1  # Stores amount song tempo differs from scene tempo setting
         self.bpm_adj_max = .25  # decimal, max adjustment limit
         self.bpm_adj_active = True  # Stores whether tempo adjustment is active
-        self.last_triggered = None  # Stores object containing tempo and scene at least scene trigger
-                                    # Not always active scene, follow actions trigger next scene immediately
-        self.scene_last_adjusted = None # Tracks last scene to be tempo adjusted
+        self.last_triggered = None  # Stores object containing tempo and scene
+                                    # at last scene trigger.
+                                    # Not always active scene, when follow actions active
+        self.scene_last_adjusted = None # Last scene to be tempo adjusted.
         self.prev_scene = None  # Stores previously triggered scene, for when 
                                 # current triggered scene is not current scene
 
@@ -82,27 +83,28 @@ class InfluencerActions(UserActionsBase):
             return False
 
         pre_adj_tempo = self.last_song_tempo
+        scene_last = self.scene_last_adjusted
+
         if (scene) and (scene.tempo > 0):
-            if ((self.tempo_diff == 0) and (
-                    self.scene_last_adjusted.tempo == self.last_song_tempo)):
+            if self.scene_last_adjusted:
+                tempo_scene_last = self.scene_last_adjusted.tempo
+            else:
+                tempo_scene_last = scene.tempo
+            if not ((self.tempo_diff == 0) and (
+                    tempo_scene_last == self.last_song_tempo)):
                 # If last calculated tempo difference was 0, and the song 
                 # tempo hasn't been changed since previous tempo adjustment,
                 # don't do anything.
-                #self.canonical_parent.show_message("No Tempo Difference")
-
-                return False
-            if self.scene_last_adjusted:
                 self.tempo_diff = self.get_tempo_diff(
-                    self.scene_last_adjusted.tempo, self.last_song_tempo)
-
-            song.tempo = self.get_adjusted_bpm(
-                scene.tempo, self.tempo_diff, self.bpm_adj_max)
+                    tempo_scene_last, self.last_song_tempo)
+                song.tempo = self.get_adjusted_bpm(
+                    scene.tempo, self.tempo_diff, self.bpm_adj_max)
 
             self.scene_last_adjusted = scene
-
+    
         debug_str = self.get_debug_str(
-            self.scene_last_adjusted.name if self.scene_last_adjusted else None, 
-            self.scene_last_adjusted.tempo if self.scene_last_adjusted else None,
+            scene_last.name if scene_last else None, 
+            scene_last.tempo if scene_last else None,
             pre_adj_tempo, self.tempo_diff, 
             scene.name if scene else None, 
             scene.tempo if scene else None,
@@ -114,17 +116,21 @@ class InfluencerActions(UserActionsBase):
         """
         Adjust given tempo by current adjustment value, considering max adj
         :param tempo_pre: float, tempo to adjust.
-        :param adj: decimal, represents percentage adjustment.
+        :param adj: decimal, represents percentage adjustment to apply.
+                    Calculated using self.get_tempo_diff method.
         :param adj_max: decimal, represents maximum allowable adjustment as decimel.
         :return bpm_adjust: float, adjusted bpm
         """
+        if not adj:
+            return tempo_pre
         # Check adjustment against max adjustment
         if adj_max <= 0:
             pass
         else:
-            adj = min(abs(adj), abs(adj_max))
-        percent_adjustment = adj * (adj/abs(adj))
-    
+            adj_abs = min(abs(adj), abs(adj_max))
+        percent_adjustment = adj_abs * (adj/abs(adj))
+        # Must consider if adj is negative /\
+
         bpm_adjusted = round(tempo_pre * (1 + percent_adjustment), 2)
 
         return bpm_adjusted
