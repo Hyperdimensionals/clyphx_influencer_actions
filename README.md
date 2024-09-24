@@ -9,7 +9,7 @@ Place the file `InfluencerActions.py` (located within its own 'user_actions' dir
 
 ```[EXAMPLE] ADJBPM;```
 
-When this action is active, When a scene that has a set tempo is triggered, this action adjusts the tempo the scene plays at based on how much the current tempo has deviated from the last played scene's tempo. 
+ When a scene that has a set tempo is triggered, when this action is active it adjusts the tempo the scene plays at based on how much the current tempo has deviated from the last played scene's tempo. 
 
 This is useful if your set has scenes with different tempos, and you still want to have these relative tempo changes, but during a particular performance you want the entire set, or whenever you decide, to be faster or slower than usual. 
 
@@ -23,7 +23,7 @@ The commands below can be set simultaneously, so ```ADJBPM ON MAX .75 ADDALL;```
 
 ### ON / OFF - Activating and Deactivating
 
-This action can be activated and deactivated simply with `ADJBPM ON;` and `ADJBPM OFF;`. When off, bpm adjustments will not occur, though the commands below will still work.
+This action can be activated and deactivated with `ADJBPM ON;` and `ADJBPM OFF;`. When off, bpm adjustments will not occur, though the commands below will still work.
 
 ### MAX - Maximum Adjustment Limits
 
@@ -41,20 +41,19 @@ To bypass the adjustment limit, set `MAX` to `0`.
 
 ```[EXAMPLE] ADJBPM ADDALL;```
 
-To conveniently integrate this action into sets with already existing xclips, The `ADDALL` command adds the `ADJBPM;` action to the first xclip found on any and all scenes with an assigned tempo in its properties.
+To conveniently integrate this action into sets with already existing xclips, The `ADDALL` command adds the `ADJBPM;` action to the first xclip found on any and all scenes with an assigned tempo in its properties, if it is not already present.
 
 ### ADJBPM Limitations
 
 <i><b>Adjustments of 0 are not possible.</b></i>
 
-Due to the mechanics of this code - I partially blame the limited Live/ClyphX API, as well as perhaps my coding skill limits - The adjustment cannot be set to zero, so if you try and move the tempo back to the same tempo as the current scene's tempo, you may notice the next scene's adjusted BPM is unexpected.
+- Due to the mechanics of this code - I partially blame the limited Live/ClyphX API, as well as perhaps my coding skill limits - The adjustment cannot be set to zero, so if you try and move the tempo back to the same tempo as the current scene's tempo, you may notice the next scene's adjusted BPM is unexpected.
 
-In this case, it is better to either move the tempo to very close to the scene's tempo (Even a fraction of one BPM away), or simply turn off ADJBPM until it is needed again.
+- In this case, it is better to either move the tempo to very close to the scene's tempo (Even a fraction of one BPM away), or simply turn off ADJBPM until it is needed again.
 
+<i><b>Action must be present on an xclip on any scene where adjustment is desired.</b></i>
 
-<i><b>Action must be present on an xclip on any scene where adjustment is desired</b></i>
-
-If `ADJBPM;` is not present on a specific scene, this scene will not be adjusted. The `ADDALL` command is the current workaround. 
+- If `ADJBPM;` is not present on a specific scene, this scene will not be adjusted. If adjustment to all scene tempos is desired, the `ADDALL` command is the current workaround. 
 
 Suggestions or implementations addressing these limitations from others are always welcome. As well as detailed reports of when the BPM does not adjust properly.
 
@@ -73,4 +72,4 @@ of the MIT license.
 
 ## Credits
 
-The author and maintainer of this module is Brendan Krueger aka <a href="http://digitalinfluencermusic.com">Digital Influencer</a>
+The author and maintainer of this module is Brendan Krueger aka <a href="http://digitalinfluencermusic.com">Digital Influencer</a>.
