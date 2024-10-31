@@ -3,8 +3,13 @@ import re
 from ClyphX_Pro.clyphx_pro.UserActionsBase import UserActionsBase
 from _Framework.SubjectSlot import subject_slot, subject_slot_group
 
+import datetime
+import os.path
+
 class InfluencerActions(UserActionsBase):
-    """ """
+    """
+    Actions by Digital Influencer. ADJBPM allows adjustment from scene tempo.
+    """
     def __init__(self, *a, **k):
         super(InfluencerActions, self).__init__(*a, **k)
         self.scenes_listener.subject = self.song()
@@ -16,50 +21,48 @@ class InfluencerActions(UserActionsBase):
     def create_actions(self):
         self.action_name = "adjbpm"
         self.tempo_diff = -.1  # Stores amount song tempo differs from scene tempo setting
-        self.bpm_adj_max = .25  # decimal, max adjustment limit
-        self.bpm_adj_active = True  # Stores whether tempo adjustment is active
+        self.bpm_adj_max = .25  # decimal, max adjustment limit.
+        self.bpm_adj_active = True  # Stores whether tempo adjustment is active.
         self.last_triggered = None  # Stores object containing tempo and scene
                                     # at last scene trigger.
-                                    # Not always active scene, when follow actions active
+                                    # Last triggered scene is NOT the active 
+                                    # scene when Follow Actions are enabled.
         self.scene_last_adjusted = None # Last scene to be tempo adjusted.
-        self.prev_scene = None  # Stores previously triggered scene, for when 
-                                # current triggered scene is not current scene
+        self.prev_scene = None  # Stores previous scene, for when current
+                                # triggered scene is not current scene.
 
-        song = self.song()
         self.song_last_playing_state = False
         self.song_started_playing = False
         self.last_song_tempo = None
 
         self.add_global_action(self.action_name, self.adjust_bpm)
 
+        song = self.song()
         song.add_tempo_listener(self.on_tempo_changed)
         song.add_is_playing_listener(self.on_is_playing_changed)
+
+        self.debug = True
+        if self.debug:
+            self.logging_dir = self.get_logging_dir()
 
     def adjust_bpm(self, action_def, args):
         """
         Adjust a triggered scene's set tempo based on current song tempo.
+        :action_def: dict, ClyphX puts content related to action type here.
+        :args: str, contains args passed by user in Ableton.
+        :return: None
         """        
         args = args.strip()
         args = args.split()
-        if "max" in args:  # Adjust max percent change as decimal
-            max_val = self.get_max_adj_from_list(args)
-            if max_val is not None:
-                self.bpm_adj_max = max_val
-                self.canonical_parent.show_message(
-                    "ADJBPM: Max tempo adjustment now " + str(
-                        max_val * 100) + " %."
-                )
+        if "max" in args:  # Adjust max percent change as decimal.
+            self.set_max(args)
         if "addall" in args: # Add action str to xclip in all scenes with tempos.
             self.add_action_to_tempo_scenes(self.action_name)
 
         if "on" in args:
             self.bpm_adj_active = True
-            if (self.last_song_tempo is None):
-                # None check is so multiple ON commands in a row
-                # don't change reference tempo.
-                self.last_song_tempo = song.tempo
         elif "off" in args:  # Deactivates BPM adjustment, 
-                             # Scene tempos will apply normally.
+                             # Scene tempos will apply normally w/ no adjustment
             self.bpm_adj_active = False
             self.last_song_tempo = None
             return False
@@ -67,50 +70,48 @@ class InfluencerActions(UserActionsBase):
         if not self.bpm_adj_active:
             return False
         
+        song = self.song()
+
         if (self.last_song_tempo is None):
             # Adj will be based on current tempo if no last tempo assigned.
             # last tempo is set to None when adjbpm is turned off.
             self.last_song_tempo = song.tempo
 
-        song = self.song()
-
         xclip = action_def["xtrigger"]
-
         scene = self.get_scene_by_clip(xclip)
 
         if not self.is_active_scene(scene):
-            self.canonical_parent.show_message("NOT ACTIVE SCENE")
             return False
 
         pre_adj_tempo = self.last_song_tempo
-        scene_last = self.scene_last_adjusted
+        last_adj_scene = self.scene_last_adjusted
 
         if (scene) and (scene.tempo > 0):
-            if self.scene_last_adjusted:
-                tempo_scene_last = self.scene_last_adjusted.tempo
+            if last_adj_scene:
+                last_scene_tempo = last_adj_scene.tempo
             else:
-                tempo_scene_last = scene.tempo
+                last_scene_tempo = scene.tempo
             if not ((self.tempo_diff == 0) and (
-                    tempo_scene_last == self.last_song_tempo)):
+                    last_scene_tempo == pre_adj_tempo)):
                 # If last calculated tempo difference was 0, and the song 
                 # tempo hasn't been changed since previous tempo adjustment,
                 # don't do anything.
                 self.tempo_diff = self.get_tempo_diff(
-                    tempo_scene_last, self.last_song_tempo)
+                    last_scene_tempo, pre_adj_tempo)
                 song.tempo = self.get_adjusted_bpm(
                     scene.tempo, self.tempo_diff, self.bpm_adj_max)
 
             self.scene_last_adjusted = scene
     
-        debug_str = self.get_debug_str(
-            scene_last.name if scene_last else None, 
-            scene_last.tempo if scene_last else None,
+        debug_str = self.debug_msg(
+            last_adj_scene.name if last_adj_scene else None, 
+            last_adj_scene.tempo if last_adj_scene else None,
             pre_adj_tempo, self.tempo_diff, 
             scene.name if scene else None, 
             scene.tempo if scene else None,
             song.tempo)
-        self.canonical_parent.show_message(debug_str)
-        self.debugmsg(debug_str)
+
+        # self.canonical_parent.show_message(debug_str)
 
     def get_adjusted_bpm(self, tempo_pre, adj, adj_max):
         """
@@ -151,7 +152,8 @@ class InfluencerActions(UserActionsBase):
         Returns difference between two tempos.
         :param last_scene_tempo: float, tempo set by last scene.
         :param current_tempo: float, current tempo of set.
-        :return tempo_diff: float, difference between two."""
+        :return tempo_diff: float, difference between two.
+        """
         if last_scene_tempo == -1:
             return False
         tempo_diff = ((current_tempo - last_scene_tempo) / last_scene_tempo)
@@ -161,30 +163,28 @@ class InfluencerActions(UserActionsBase):
         """
         Checks if given scene is currently playing scene.
         Considers behavior when follow actions enabled.
-        :param scene: Scene Object, scene to check
+        :param scene: Scene object, scene to check
         :return: bool, if given scene is active scene.
         """
         if scene._live_ptr == self.get_active_scene()._live_ptr:
             return True
         else:
-            self.canonical_parent.show_message("ADJBPM: NOT ACTIVE SCENE")
             return False
 
     def get_active_scene(self):
         """
-        Return currently playing scene at time of xclip trigger
-        Checks if follow actions are enabled
-        :return: Scene Object
+        Return currently playing scene at time of xclip trigger.
+        Checks for if follow actions are enabled.
+        :return: Scene object
         """
         song = self.song()
         song_started = self.song_just_started()
         if self.follow_actions_enabled():
-            # is_triggered is always false if xclip activated when song is not playing
-            # Since follow actions trigger next scene immediately, 
-            # before playing clips, must find way to apply triggered scene to next time only
-            # when scene is triggered at xclip play
+            # is_triggered is always false if xclip 
+            # activated when song is not playing
             if song_started:
                 scene = song.view.selected_scene
+                self.prev_scene = None
             else:
                 scene = self.prev_scene if self.prev_scene else song.view.selected_scene
         else:
@@ -193,7 +193,7 @@ class InfluencerActions(UserActionsBase):
 
     def get_scene_by_clip(self, clip):
         """
-        Search for scene in song which holds given clip
+        Search for scene which holds given clip
         :param clip: Clip object
         :return: Scene object if present, else None
         """
@@ -237,7 +237,9 @@ class InfluencerActions(UserActionsBase):
             if (self.song().scenes[
                 scene_above_index]._live_ptr == self.scene_last_adjusted._live_ptr
                 ):
-                scene_last_adjusted_above = True        
+                scene_last_adjusted_above = True  
+                # TODO: Not currently deemed necessary, but logic still
+                # here for future consideration.      
         if (self.last_triggered.scene.is_triggered):
             return True
         else:
@@ -247,7 +249,7 @@ class InfluencerActions(UserActionsBase):
         """
         Add action to the first xclip found within given clips_list.
         This only checks the first xclip found, so may double up given action
-        in lists with multiple xclips.
+        in lists with multiple xclips. (TODO)
         :param action_name: str, name of action to append to xclip name.
         :param clips_list: list, clips from scene.
         :return: scene obj, scene with appended xclip as name.
@@ -268,9 +270,6 @@ class InfluencerActions(UserActionsBase):
                 name_l.append(action_append)
                 new_name = ''.join(name_l)
                 c.name = new_name
-                # new_clipname = 'xY'
-                # action = f'{track_number} / CLIP({clipnumber}) NAME {new_clipname}'
-                # self.canonical_parent.clyphx_pro_component.trigger_action_list(action)
                 return c
 
     def add_action_to_all_scenes(self, action_name):
@@ -285,31 +284,56 @@ class InfluencerActions(UserActionsBase):
                 [c.clip for c in scene.clip_slots if c.clip is not None]
             )
 
+    def set_max(self, args):
+        """
+        Set maximum adjustment.
+        :param args: Action arguments 
+        :return: True if max has been updated
+        :rtype: bool
+        """
+        max_input_error = "MAX must be followed by decimal " \
+                          "representing percentage max adjustment."
+        
+        max_val = self.get_arg_val_from_list(args, 'max', max_input_error)
+        if max_val is not None:
+            self.bpm_adj_max = max_val
+            self.canonical_parent.show_message(
+                "ADJBPM: Max tempo adjustment now " + str(
+                    max_val * 100) + " %."
+            )
+            return True
+
     # Action Argument Funcs #
     #########################
     # Methods related to interpreting action args and executing their commands
 
-    def get_max_adj_from_list(self, li):
+    def get_arg_val_from_list(self, li, arg_str, input_error_msg=None):
         """
-        Interpret max adjustment setting from argument list.
-        Set max will be next item in list after 'max' string.
-        :param li: list, from split()-ing apart xclip args string.
-        :return: float, new max BPM adjustment as decimal fraction.
+        Find numerical value in list which follows given argument name.
+        :param li: List of args and values.
+        :param arg_str: arg to find values for.
+        :param input_error_msg: Error message to display if value == NAN.
+        :return: float, value of argument
         """
-        max_val_index = li.index('max')
-        max_val = None
-        input_error_msg = "ADJBPM: MAX must be followed by decimal " \
-                          "representing percentage max adjustment."
+        arg_str = arg_str.lower()
+        arg_str_index = li.index(arg_str)
+        arg_val = None
+
+        if input_error_msg:
+            input_error_msg = "ADJBPM: " + str(input_error_msg)
+        else:
+            input_error_msg = "ADJBPM: {0} argument must be followed by " \
+                            "number.".format(arg_str)
         try:
-            max_val = float(li[max_val_index + 1])
-            # Set Max Adjustment should be next item in list.
+            arg_val = float(li[arg_str_index + 1])
+            # Arg value set by user should be next item in list.
         except IndexError:
             self.canonical_parent.show_message(input_error_msg)
             return None
         except ValueError:
             self.canonical_parent.show_message(input_error_msg)
             return None
-        return max_val
+        return arg_val
 
     def add_action_to_tempo_scenes(self, action_name):
         """
@@ -335,6 +359,7 @@ class InfluencerActions(UserActionsBase):
     @subject_slot_group('is_triggered')
     def is_triggered_listener(self, scene):
         """
+        Listens for triggered scenes.
         When follow actions are off, song is playing, and there is quantization:
         when you 'play' a scene, scene triggers before it's playing,
         When scenes are triggered by follow actions and not user input,
@@ -355,29 +380,31 @@ class InfluencerActions(UserActionsBase):
         if not self.bpm_adj_active:
             # Doesn't capture current tempo when action is deactivated
             # TODO: Turn off listener if possible?
-            return
+            return False
         song = self.song()
-        if not self.scene_last_adjusted:
-            self.last_song_tempo = song.tempo
-            return
-        elif self.follow_actions_enabled():
+
+        if self.follow_actions_enabled():
             scene = self.prev_scene
-            # self.canonical_parent.show_message("Last Tempo: {}".format(str(self.last_song_tempo)))
         else:
             scene = self.last_triggered.scene
 
-        if (scene.tempo == song.tempo):
-            pass
+        if scene and (scene.tempo == song.tempo):
+            # Ignores tempo changes in this case becasue when follow actions
+            # are enabled, song tempo is briefly set to actual scene tempo 
+            # before adjustment can take place. So if tempo change was recorded
+            # in this case, adjustment func would always see a tempo difference 
+            # of 0.
+            return False
         else:
             self.last_song_tempo = song.tempo
  
     def on_is_playing_changed(self):
         """
         is_playing listener func. Triggered when song play state changed.
-        When song starts, assigns change in state to variable.
+        Assigns change state to variable when song is started.
         """
-        # If play button in ableton GUI is used to restart playing WHILE song
-        # is already playing, song_start_playing will be set to true
+        # If play button in ableton GUI is pressed WHILE song
+        # is already playing, song_started_playing will be set to true
         # probably because is_playing is briefly False any time play 
         # button is activated regardless of current play state
         song_playing = self.song().is_playing
@@ -387,16 +414,23 @@ class InfluencerActions(UserActionsBase):
             self.song_started_playing = False
 
         self.song_last_playing_state = song_playing
-        #self.song_last_playing_state = 
             
-    # Debugging #
-    #############
+    # Debugging and Testing #
+    #########################
+    def _debug_on_check(func):
+        def inner(self, *args, **kwargs):
+            if self.debug:
+                return func(self, *args, **kwargs)
+        return inner
+
     def get_obj_attr_list(self, obj):
         return [(str(attribute) + '\n') for attribute in dir(obj)]
-    def debugmsg(self, text):
-        with open('/Users/blaise/Documents/Programming/Ableton Extensions/clyphx_influencer_actions/useractiondebug.txt', 'a') as f:
+    
+    def debug_log_msg(self, text):
+        with open(os.path.join(self.logging_dir, 'influenceractions_debug.txt'), 'a') as f:
             f.write(text)
-    def get_debug_str(
+
+    def debug_get_str(
         self, current_scene_name=None, current_scene_tempo=None,
         pre_adj_tempo=None, tempo_diff=None, scene_name=None,
         scene_tempo=None, song_tempo=None):
@@ -419,10 +453,57 @@ class InfluencerActions(UserActionsBase):
                     str(current_scene_name), str(current_scene_tempo),
                     str(pre_adj_tempo), str(tempo_diff), str(scene_name),
                     str(scene_tempo), str(song_tempo))
+    
+    @_debug_on_check
+    def debug_msg(
+        self, current_scene_name=None, current_scene_tempo=None,
+        pre_adj_tempo=None, tempo_diff=None, scene_name=None,
+        scene_tempo=None, song_tempo=None):
+        """
+        Take given song variables, create readable str, and log them in file.
+        :return: str, debug message created and logged
+        """
+
+        msg = self.debug_get_str(current_scene_name, current_scene_tempo,
+            pre_adj_tempo, tempo_diff, scene_name, scene_tempo, song_tempo)
+
+        self.debug_log_msg(msg)
+
+        return msg
+
+    def get_logging_dir(self):
+        """
+        Creates directory for logging files and returns directory.
+        :return: str, directory of logging files.
+        """
+        fpath = os.path.dirname(os.path.abspath(__file__))
+        fullpath = os.path.join(fpath,'InfluencerActions_logs')
+        if not os.path.isdir(fullpath):
+            os.makedirs(fullpath)
+        return fullpath
+
+    # TODO: Test Funcs below.
+    def test_scene_tempo(self):
+        """
+        Compare current song tempo to a given BPM
+        BPM may be given from action's TEST arg.
+        """
+        pass
+    
+    def test_output_result_on_clip(self, scene):
+        """
+        Display test result on clip, clip colored green if passed.
+        :param scene: _description_
+        :type scene: _type_
+        """
+        pass
+
 
 class Snapshot():
     """
     Record states of given variables at time of instance creation
+    :param scene: Current scene object.
+    :param song_tempo: float, Current tempo of song.
     """
     def __init__(self, scene=None, song_tempo=None):
         """
