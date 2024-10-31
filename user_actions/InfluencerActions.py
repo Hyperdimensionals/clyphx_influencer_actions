@@ -41,7 +41,7 @@ class InfluencerActions(UserActionsBase):
         song.add_tempo_listener(self.on_tempo_changed)
         song.add_is_playing_listener(self.on_is_playing_changed)
 
-        self.debug = True
+        self.debug = False
         if self.debug:
             self.logging_dir = self.get_logging_dir()
 
